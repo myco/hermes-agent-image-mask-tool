@@ -116,7 +116,10 @@ imports against a temp `HERMES_HOME` (see `tests/tools/test_approval_config_read
 
 > Use the **codex_image_mask** tool: main image `/home/rafal/image-edit-sunset/input.png`, mask `/home/rafal/image-edit-sunset/mask.png` — place a yellow rubber duck inside the masked area, leave everything else unchanged.
 
-The tool is loaded eagerly (listed in `_HERMES_CORE_TOOLS`), while `image_generate` is deferred behind `tool_search`, so this wording reliably selects it.
+**Notes**
+- The mask must be a PNG with an alpha channel and the same dimensions as input.png.
+- Transparent pixels (alpha=0) indicate areas to replace; opaque pixels are preserved.
+
 
 **Test results.** Placing three objects (mug, cactus, duck) into one masked tile of a 3×5 grid:
 <img width="1608" height="611" alt="image" src="https://github.com/user-attachments/assets/256e0443-30a7-4c76-90a9-5bf5641d74f9" />
