@@ -105,8 +105,18 @@ another toolset") rather than tool counts. Approval/security-boundary tools are 
 imports against a temp `HERMES_HOME` (see `tests/tools/test_approval_config_readonly.py`).
 
 
-## Image edit with mask using OpenAI codex
+## Image edit with mask
 
 
-**`codex_image_mask`** — a Hermes tool (`tools/codex_image_mask.py`, toolset `image_gen`) for mask-guided inpainting via the ChatGPT/Codex Responses API: it always takes a `prompt`, a main `image_url` and a `mask_url` (PNG with alpha, same size as the main image; transparent pixels = region to repaint), and always runs the `image_generation` tool with `gpt-image-2` at `quality: high`, `action: edit` and `input_fidelity: high` (the Codex backend rejects `input_fidelity`, so the call is retried once without it and the result reports `"input_fidelity": "unsupported_by_backend"`), returning the edited PNG path in `image`. Trigger it by naming the tool and the mask explicitly, e.g. *"Use the **codex_image_mask** tool: main image `input_image.png`, mask `mask_image.png` — place a yellow rubber duck inside the masked area, leave everything else unchanged"* (the tool is loaded eagerly in `_HERMES_CORE_TOOLS`, while `image_generate` is deferred behind `tool_search`, so this wording reliably selects it). In a head-to-head test placing three objects (mug, cactus, duck) into a masked tile of a 3×5 grid, `codex_image_mask` painted the object in the correct tile 3/3 times with ~1 % pixel drift outside the mask, whereas `image_generate` (mask passed as a reference image plus a prompt explaining it) placed the object in the wrong tile 3/3 times and left the masked tile untouched; both took ~22–28 s per call and produced equivalent object quality.
+## `codex_image_mask` — mask-guided image editing via OpenAI Codex
+
+**What it is.** A Hermes tool (`tools/codex_image_mask.py`, toolset `image_gen`) for inpainting through the ChatGPT/Codex Responses API. It always takes three inputs — a `prompt`, a main `image_url`, and a `mask_url` (PNG with an alpha channel, same size as the main image; **transparent pixels = region to repaint**) — and always calls the `image_generation` tool with `gpt-image-2` at `quality: high`, `action: edit`, `input_fidelity: high`. The Codex backend rejects `input_fidelity`, so the call is retried once without it and the result reports `"input_fidelity": "unsupported_by_backend"`. The edited PNG path is returned in `image`.
+
+**How to trigger it.** Name the tool and the mask explicitly:
+
+> Use the **codex_image_mask** tool: main image `/home/rafal/image-edit-sunset/input.png`, mask `/home/rafal/image-edit-sunset/mask.png` — place a yellow rubber duck inside the masked area, leave everything else unchanged.
+
+The tool is loaded eagerly (listed in `_HERMES_CORE_TOOLS`), while `image_generate` is deferred behind `tool_search`, so this wording reliably selects it.
+
+**Test results.** Placing three objects (mug, cactus, duck) into one masked tile of a 3×5 grid:
 <img width="1130" height="1083" alt="image" src="https://github.com/user-attachments/assets/02c0a205-e981-4819-892f-c3f71bb63a06" />
