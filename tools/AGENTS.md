@@ -119,4 +119,6 @@ imports against a temp `HERMES_HOME` (see `tests/tools/test_approval_config_read
 The tool is loaded eagerly (listed in `_HERMES_CORE_TOOLS`), while `image_generate` is deferred behind `tool_search`, so this wording reliably selects it.
 
 **Test results.** Placing three objects (mug, cactus, duck) into one masked tile of a 3×5 grid:
+<img width="1608" height="611" alt="image" src="https://github.com/user-attachments/assets/256e0443-30a7-4c76-90a9-5bf5641d74f9" />
+
 <img width="1130" height="1083" alt="image" src="https://github.com/user-attachments/assets/02c0a205-e981-4819-892f-c3f71bb63a06" />
