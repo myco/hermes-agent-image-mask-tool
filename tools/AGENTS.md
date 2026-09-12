@@ -103,3 +103,10 @@ delegation is process-local; work that must survive restart uses `cronjob` or
 assert contracts ("every registered tool has a toolset", "no schema description names a tool from
 another toolset") rather than tool counts. Approval/security-boundary tools are E2E'd with real
 imports against a temp `HERMES_HOME` (see `tests/tools/test_approval_config_readonly.py`).
+
+
+## Image edit with mask using OpenAI codex
+
+
+**`codex_image_mask`** — a Hermes tool (`tools/codex_image_mask.py`, toolset `image_gen`) for mask-guided inpainting via the ChatGPT/Codex Responses API: it always takes a `prompt`, a main `image_url` and a `mask_url` (PNG with alpha, same size as the main image; transparent pixels = region to repaint), and always runs the `image_generation` tool with `gpt-image-2` at `quality: high`, `action: edit` and `input_fidelity: high` (the Codex backend rejects `input_fidelity`, so the call is retried once without it and the result reports `"input_fidelity": "unsupported_by_backend"`), returning the edited PNG path in `image`. Trigger it by naming the tool and the mask explicitly, e.g. *"Use the **codex_image_mask** tool: main image `input_image.png`, mask `mask_image.png` — place a yellow rubber duck inside the masked area, leave everything else unchanged"* (the tool is loaded eagerly in `_HERMES_CORE_TOOLS`, while `image_generate` is deferred behind `tool_search`, so this wording reliably selects it). In a head-to-head test placing three objects (mug, cactus, duck) into a masked tile of a 3×5 grid, `codex_image_mask` painted the object in the correct tile 3/3 times with ~1 % pixel drift outside the mask, whereas `image_generate` (mask passed as a reference image plus a prompt explaining it) placed the object in the wrong tile 3/3 times and left the masked tile untouched; both took ~22–28 s per call and produced equivalent object quality.
+<img width="1130" height="1083" alt="image" src="https://github.com/user-attachments/assets/02c0a205-e981-4819-892f-c3f71bb63a06" />
