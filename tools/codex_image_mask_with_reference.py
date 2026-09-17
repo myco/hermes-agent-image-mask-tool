@@ -83,6 +83,7 @@ def _build_responses_payload(
         "quality": IMAGE_QUALITY,
         "size": "auto",
         "output_format": "png",
+        "background": "opaque",
         "partial_images": _PARTIAL_IMAGES_REQUESTED,
     }
     if mode == "inline":
