@@ -114,7 +114,7 @@ imports against a temp `HERMES_HOME` (see `tests/tools/test_approval_config_read
 
 **How to trigger it.** Name the tool and the mask explicitly:
 
-> Use the **codex_image_mask** tool: main image `/home/rafal/image-edit-sunset/input.png`, mask `/home/rafal/image-edit-sunset/mask.png` — place a yellow rubber duck inside the masked area, leave everything else unchanged.
+> Use the **codex_image_mask** tool: main image `/home/rafal/image-edit-sunset/input.png`, mask `/home/rafal/image-edit-sunset/mask.png` — Pass this prompt to the tool exactly as written, do not rephrase or expand it: "place a yellow rubber duck inside the masked area, leave everything else unchanged."
 
 **Notes**
 - The mask must be a PNG with an alpha channel and the same dimensions as input.png.
@@ -148,8 +148,8 @@ imports against a temp `HERMES_HOME` (see `tests/tools/test_approval_config_read
 > Main image: `/home/rafal/image-edit-sunset/input.png`
 > Mask: `/home/rafal/image-edit-sunset/mask.png`
 > Object image: `/home/rafal/image-edit-sunset/object.png`
->
-> Extract the red rotary telephone from the object image and place it cleanly inside the masked region of the main scene, scaled to fit. Add a subtle contact shadow, keep the exact details of the phone, and leave everything outside the masked area unchanged.
+> Pass this prompt to the tool exactly as written, do not rephrase or expand it:
+> "Extract the red rotary telephone from the object image and place it cleanly inside the masked region of the main scene, scaled to fit. Add a subtle contact shadow, keep the exact details of the phone, and leave everything outside the masked area unchanged."
 
 **Test results.** Placing a red rotary phone into one masked tile of a 3×5 grid.
 
