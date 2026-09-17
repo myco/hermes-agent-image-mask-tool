@@ -151,4 +151,17 @@ imports against a temp `HERMES_HOME` (see `tests/tools/test_approval_config_read
 >
 > Extract the red rotary telephone from the object image and place it cleanly inside the masked region of the main scene, scaled to fit. Add a subtle contact shadow, keep the exact details of the phone, and leave everything outside the masked area unchanged.
 
-**Test results.** Placing a red rotary phone into one masked tile of a 3×5 grid: default `tool` mode put the object in the correct tile 3/3 with details intact; `inline` mode missed the tile 3/3. Known limitation: with a photographic reference attached, gpt-image-2 applies a global relighting/vignette to the whole frame regardless of the mask (the `input_fidelity` parameter that would suppress it is not supported by the Codex backend).
+**Test results.** Placing a red rotary phone into one masked tile of a 3×5 grid.
+
+<img width="1818" height="1524" alt="image" src="https://github.com/user-attachments/assets/9993eac7-a748-4378-ad11-e93349e9df1d" />
+
+| Mask | Tool | Correct placement | Phone pixels in zone | Output | Time/call |
+|---|---|---|---|---|---|
+| mask.png | **codex_image_mask_with_reference** | **3 / 3** | 100 % | RGB, opaque | 26–34 s |
+| mask.png | image_generate | 0 / 3 | 0 % | RGB, opaque | 23–26 s |
+| mask2.png | **codex_image_mask_with_reference** | **3 / 3** | 100 % | RGB, opaque | 26–28 s |
+| mask2.png | image_generate | 0 / 3 | 0 % | RGB, opaque | 24–29 s |
+
+Notes:
+- The new tool tracks the mask: moving the target from middle-left (`mask.png`) to top-right (`mask2.png`) moved the phone every time.
+- `image_generate` again put the phone in the top-left tile in all 6 runs, regardless of mask — it treats the mask as just another reference picture.
