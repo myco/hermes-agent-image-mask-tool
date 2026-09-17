@@ -183,6 +183,7 @@ def _build_responses_payload(*, prompt: str, main_data_url: str, mask_data_url: 
         "quality": IMAGE_QUALITY,
         "size": "auto",
         "output_format": "png",
+        "background": "opaque",
         "partial_images": _PARTIAL_IMAGES_REQUESTED,
     }
     if mode == "inline":
