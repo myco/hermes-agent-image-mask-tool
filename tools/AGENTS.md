@@ -125,3 +125,30 @@ imports against a temp `HERMES_HOME` (see `tests/tools/test_approval_config_read
 <img width="1608" height="611" alt="image" src="https://github.com/user-attachments/assets/256e0443-30a7-4c76-90a9-5bf5641d74f9" />
 
 <img width="1130" height="1083" alt="image" src="https://github.com/user-attachments/assets/02c0a205-e981-4819-892f-c3f71bb63a06" />
+
+
+## Image edit with mask and reference object image
+
+## `codex_image_mask_with_reference` — insert an object from a reference image into a masked region
+
+**What it is.** A Hermes tool (`tools/codex_image_mask_with_reference.py`, toolset `image_gen`) that builds on `codex_image_mask` and takes **three** images: the main scene, a mask, and an object reference image. It always calls the Codex Responses API `image_generation` tool with `gpt-image-2` at `quality: high`, `action: edit`, `input_fidelity: high` (retried without it when the Codex backend rejects that parameter — reported as `"input_fidelity": "unsupported_by_backend"`). The main image and the object go in as `input_image` parts and the mask via `input_image_mask`; setting `CODEX_IMAGE_MASK_MODE=inline` sends the mask as a second `input_image` instead. The tool prepends a role preamble telling the model which attached image is which, so refer to images by role rather than number. Output is a single PNG path in `image`, exactly as the API returned it — no post-processing.
+
+**Inputs**
+
+| Parameter | Description |
+|---|---|
+| `prompt` | How to place and blend the object inside the masked region |
+| `image_url` | Main scene — absolute path, URL or `data:` URL |
+| `mask_url` | PNG with alpha channel, same size as the main image; **transparent = placement zone**, opaque = keep unchanged |
+| `object_url` | Reference image containing the object to extract (any size) |
+
+**How to trigger it**
+
+> Use the **codex_image_mask_with_reference** tool.
+> Main image: `/home/rafal/image-edit-sunset/input.png`
+> Mask: `/home/rafal/image-edit-sunset/mask.png`
+> Object image: `/home/rafal/image-edit-sunset/object.png`
+>
+> Extract the red rotary telephone from the object image and place it cleanly inside the masked region of the main scene, scaled to fit. Add a subtle contact shadow, keep the exact details of the phone, and leave everything outside the masked area unchanged.
+
+**Test results.** Placing a red rotary phone into one masked tile of a 3×5 grid: default `tool` mode put the object in the correct tile 3/3 with details intact; `inline` mode missed the tile 3/3. Known limitation: with a photographic reference attached, gpt-image-2 applies a global relighting/vignette to the whole frame regardless of the mask (the `input_fidelity` parameter that would suppress it is not supported by the Codex backend).
