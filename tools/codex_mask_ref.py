@@ -1,11 +1,18 @@
 #!/home/rafal/.hermes/hermes-agent/venv/bin/python
-"""Run Hermes' Codex masked image-edit tools directly, outside the agent.
+"""Run Hermes' Codex masked image-edit tools outside the agent.
 
 With -r/--object: codex_image_mask_with_reference (main + mask + object reference image).
 Without it:       codex_image_mask                (main + mask only).
 
+Both go through a Codex chat model (--chat-model) that calls gpt-image-2's image_generation
+tool; the mask is passed to that tool, which uses it to decide where the edit goes.
+
 Imports the tools from the Hermes source tree and calls them as-is, so they use the same
 ChatGPT/Codex OAuth token Hermes uses (resolved by agent.auxiliary_client from ~/.hermes).
+
+To keep the new object inside the mask, the prompt gets a size limit derived from the mask,
+and each result is checked for spill-over just outside the mask; if it spilled, the edit is
+retried asking for a smaller object (see --attempts, --max-spill, --no-size-hint).
 
 Usage:
     ./codex_mask_ref.py                                   # mask-only test run with image-edit-sunset PNGs
@@ -16,9 +23,13 @@ Usage:
 import argparse
 import json
 import logging
+import math
 import os
 import shutil
 import sys
+
+import numpy as np
+from PIL import Image, ImageChops, ImageFilter
 
 HERMES_DIR = os.path.expanduser("~/.hermes/hermes-agent")
 TEST_DIR = os.path.expanduser("~/image-edit-sunset")
@@ -35,6 +46,71 @@ DEFAULT_PROMPT_MASK = (
     "illustration's lighting. Leave every other box and the background unchanged."
 )
 
+SPILL_BAND_PX = 20   # width of the ring just outside the mask that is checked for spill-over
+SPILL_DIFF = 40      # per-pixel change (0-255, after a light blur) that counts as "changed"
+
+
+def editable_area(mask_path: str) -> Image.Image:
+    """L-mode image: 255 where the mask is transparent (editable), 0 elsewhere."""
+    alpha = Image.open(mask_path).convert("RGBA").getchannel("A")
+    return alpha.point(lambda v: 255 if v < 128 else 0)
+
+
+def size_hint(mask_path: str) -> str:
+    """Prompt text stating how big the masked area is, as fractions of the image."""
+    editable = editable_area(mask_path)
+    x0, y0, x1, y1 = editable.getbbox()
+    w, h = editable.size
+    pct = lambda v, total: round(100 * v / total)
+    return (
+        f"SIZE LIMIT: the masked (editable) area is small: about {pct(x1 - x0, w)}% of the image "
+        f"width and {pct(y1 - y0, h)}% of the image height, spanning {pct(x0, w)}-{pct(x1, w)}% "
+        f"from the left edge and {pct(y0, h)}-{pct(y1, h)}% from the top edge. The new object "
+        "must fit ENTIRELY inside that area with some empty space around it; no part of it may "
+        "extend outside. Make the object smaller than its natural size if needed to fit."
+    )
+
+
+def spill_percent(original_path: str, mask_path: str, generated_path: str) -> float:
+    """% of pixels changed in a thin ring just outside the mask, i.e. how much of the new object
+    spilled past the mask edge. Background noise from full-image regeneration is ~0-0.5%."""
+    original = Image.open(original_path).convert("RGB")
+    generated = Image.open(generated_path).convert("RGB").resize(original.size, Image.LANCZOS)
+    editable = editable_area(mask_path)
+    grown = editable
+    for _ in range(SPILL_BAND_PX // 2):
+        grown = grown.filter(ImageFilter.MaxFilter(5))
+    ring = (np.array(grown) > 0) & ~(np.array(editable) > 0)
+    diff = ImageChops.difference(original.filter(ImageFilter.GaussianBlur(2)),
+                                 generated.filter(ImageFilter.GaussianBlur(2))).convert("L")
+    changed = np.array(diff) > SPILL_DIFF
+    return round(100 * float(changed[ring].mean()), 2)
+
+
+def composite(original_path: str, mask_path: str, generated_path: str, out_path: str, feather: float) -> None:
+    """Keep generated pixels only inside the mask's transparent area, original pixels elsewhere.
+    The output always has the generated image's resolution: the original and the mask are scaled
+    (up or down) to it, since the backend may return a different size than the original."""
+    original = Image.open(original_path).convert("RGB")
+    generated = Image.open(generated_path).convert("RGB")
+    scale = generated.width / original.width
+    rescaled = generated.size != original.size
+    if not rescaled:
+        editable = editable_area(mask_path)
+    else:
+        original = original.resize(generated.size, Image.LANCZOS)
+        # Resize the soft alpha before thresholding so the mask edge stays smooth.
+        alpha = Image.open(mask_path).convert("RGBA").getchannel("A").resize(generated.size, Image.BILINEAR)
+        editable = alpha.point(lambda v: 255 if v < 128 else 0)
+    # Grow the editable area so the soft edge (and resampling blur of a rescaled original) falls on
+    # the kept side: original pixels from the editable area must never show through at the border.
+    grow = math.ceil(2 * feather) + (math.ceil(max(scale, 1)) if rescaled else 0)
+    if grow > 0:
+        editable = editable.filter(ImageFilter.MaxFilter(2 * grow + 1))
+    if feather > 0:
+        editable = editable.filter(ImageFilter.GaussianBlur(feather))
+    Image.composite(generated, original, editable).save(out_path)
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -48,8 +124,22 @@ def main() -> int:
     ap.add_argument("--mode", choices=["tool", "inline"],
                     help="mask mode (sets CODEX_IMAGE_MASK_MODE; default: tool)")
     ap.add_argument("--chat-model", default="gpt-5.6-sol",
-                    help="Codex host model that calls image_generation (Hermes hardcodes gpt-5.5, "
+                    help="Codex chat model that calls image_generation (Hermes hardcodes gpt-5.5, "
                          "which this ChatGPT account rejects); pass 'hermes' to keep Hermes' value")
+    ap.add_argument("--attempts", type=int, default=3,
+                    help="max generations; each retry asks for a ~30%% smaller object (default: 3, "
+                         "1 = no retries)")
+    ap.add_argument("--max-spill", type=float, default=1.5,
+                    help="max %% of changed pixels allowed in a 20px ring outside the mask before "
+                         "the result counts as spilled (default: 1.5)")
+    ap.add_argument("--no-size-hint", action="store_true",
+                    help="don't append the mask-derived size limit to the prompt")
+    ap.add_argument("--composite", action="store_true",
+                    help="paste the result back into the original inside the mask only, so nothing "
+                         "outside the mask changes (objects overflowing the mask get clipped); output "
+                         "always has the generated image's resolution")
+    ap.add_argument("--feather", type=float, default=3.0,
+                    help="blur radius in px for the --composite mask edge (default: 3)")
     args = ap.parse_args()
 
     if args.mode:
@@ -62,28 +152,55 @@ def main() -> int:
 
     if args.object:
         import tools.codex_image_mask_with_reference as tool_mod
-        prompt = args.prompt or DEFAULT_PROMPT_REFERENCE
-        call = lambda: tool_mod.codex_image_mask_with_reference_tool(
+        call = lambda prompt: tool_mod.codex_image_mask_with_reference_tool(
             prompt, image, mask, os.path.abspath(args.object))
     else:
         import tools.codex_image_mask as tool_mod
-        prompt = args.prompt or DEFAULT_PROMPT_MASK
-        call = lambda: tool_mod.codex_image_mask_tool(prompt, image, mask)
+        call = lambda prompt: tool_mod.codex_image_mask_tool(prompt, image, mask)
+    base_prompt = args.prompt or (DEFAULT_PROMPT_REFERENCE if args.object else DEFAULT_PROMPT_MASK)
 
     # Each module has its own _CODEX_CHAT_MODEL, read by its _build_responses_payload at call time.
     if args.chat_model != "hermes":
         tool_mod._CODEX_CHAT_MODEL = args.chat_model
     print(f"Tool: {tool_mod.TOOL_NAME}", file=sys.stderr)
 
-    result = call()
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    if not args.no_size_hint:
+        base_prompt = f"{base_prompt}\n\n{size_hint(mask)}"
 
-    if not result.get("success"):
+    best = None  # (spill, result) with the lowest spill so far
+    for attempt in range(1, max(args.attempts, 1) + 1):
+        prompt = base_prompt
+        if attempt > 1:
+            scale = round(100 * 0.7 ** (attempt - 1))
+            prompt += (f"\n\nA previous attempt drew the object too large and it extended outside the "
+                       f"masked area. Draw it at about {scale}% of that size so it fits completely "
+                       "inside the masked area.")
+        print(f"--- Attempt {attempt}/{args.attempts}", file=sys.stderr)
+        result = call(prompt)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        if not result.get("success"):
+            continue
+        spill = spill_percent(image, mask, result["image"])
+        print(f"Spill outside mask: {spill}% (limit {args.max_spill}%)", file=sys.stderr)
+        if best is None or spill < best[0]:
+            best = (spill, result)
+        if spill <= args.max_spill:
+            break
+
+    if best is None:
         return 1
+    spill, result = best
+    fits = spill <= args.max_spill
+    if not fits:
+        print(f"WARNING: every attempt spilled outside the mask; keeping the best one ({spill}%).",
+              file=sys.stderr)
     if args.output:
-        shutil.copyfile(result["image"], args.output)
+        if args.composite:
+            composite(image, mask, result["image"], args.output, args.feather)
+        else:
+            shutil.copyfile(result["image"], args.output)
         print(f"Saved: {args.output}")
-    return 0
+    return 0 if fits else 2
 
 
 if __name__ == "__main__":
