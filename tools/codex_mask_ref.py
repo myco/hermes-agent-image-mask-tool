@@ -18,6 +18,35 @@ Usage:
     ./codex_mask_ref.py                                   # mask-only test run with image-edit-sunset PNGs
     ./codex_mask_ref.py -r ~/image-edit-sunset/object.png # reference test run
     ./codex_mask_ref.py -p "prompt" -i main.png -m mask.png [-r object.png] -o out.png
+
+    From Windows (C:\\Users\\Rafal\\claude_boards is mounted at /mnt/claude_boards):
+    wsl.exe -d Ubuntu -- /home/rafal/codex_mask_ref.py --composite -p "..." \\
+        -i /mnt/claude_boards/main.png -m /mnt/claude_boards/mask.png -o /mnt/claude_boards/result.png
+
+How to use it well:
+  * Mask: a PNG with the same pixel size as the main image. TRANSPARENT pixels = the area to
+    edit, opaque pixels = keep. (Image viewers often show transparent pixels as white.)
+  * Prompt: always say that the object goes "inside the masked area". The chat model that
+    writes the image instructions does not see the mask (default --mode tool), so also describe
+    the area by what is visible there, e.g. "on the pool water", "on the bright green ground",
+    and say what to keep. Describe size relative to the scene ("shorter than the coffee table")
+    rather than in percentages, and avoid words like "big".
+  * Objects (a boat, a cactus, a phone): use the defaults. A size limit computed from the mask is
+    appended to the prompt, each result is checked for spill-over just outside the mask, and up
+    to --attempts tries are made, asking for a smaller object each time.
+  * Non-objects that fill the whole masked area (landscapes, textures, terrain, sky, floors):
+    add --no-size-hint --attempts 1. The size limit makes no sense there, and the spill check
+    gives false alarms because the model redraws the mask border.
+  * --composite: after generation, keeps the generated pixels only inside the mask and restores
+    everything outside it from the original image (the model otherwise redraws the whole picture
+    slightly). The output has the generated image's resolution; if that differs from the
+    original's, the original and mask are scaled to it first, so restored areas are the original
+    rescaled rather than pixel-identical. Anything the model drew past the mask edge is cut off, so make
+    the mask big enough for the whole object. Recommended for almost every run.
+  * Mask with several separate areas: the model tends to fill only one of them. Ask for each
+    area explicitly in the prompt (with --no-size-hint), or run once per area.
+  * Exit codes: 0 = OK, 1 = generation failed, 2 = saved, but every attempt spilled past the
+    mask (or the spill check misfired on a non-object edit).
 """
 
 import argparse
